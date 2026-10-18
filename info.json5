@@ -1,11 +1,13 @@
 {
-  id: "tetr4dr.better-fullscreen",
+  id: "fourdified.better-fullscreen",
   name: "Better Fullscreen",
-  author: "Tetr4Dr",
+  author: "Fourdified",
   description: "Set fullscreen on any monitor!",
-  version: "1.0",
+  version: "1.1",
   gameVersion: "0.2.1.4",
   modDLL: "4DMod.dll",
   externalDLLs: [],
-  dependencies: {},
+  dependencies: {
+	"tr1ngledev.4dkeybinds": "? before > 1.0"
+  },
 }

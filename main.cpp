@@ -1,6 +1,7 @@
 //#define DEBUG_CONSOLE // Uncomment this if you want a debug console to start. You can use the Console class to print. You can use Console::inStrings to get input.
 
 #include <4dm.h>
+#include "4DKeyBinds.h"
 
 using namespace fdm;
 
@@ -14,54 +15,63 @@ Rect oldWindowRect{0,0,0,0};
 // Initialize the DLLMain
 initDLL
 
-GLFWmonitor* getCurrentMonitor(GLFWwindow* window, bool fullscreenMode)
+// https://stackoverflow.com/questions/21421074/how-to-create-a-full-screen-window-on-the-current-monitor-with-glfw
+GLFWmonitor* getCurrentMonitor(GLFWwindow* window)
 {
-	if (!fullscreenMode)
+	GLFWmonitor* bestMonitor = glfwGetPrimaryMonitor();
+
+	int wx, wy;
+	int ww, wh;
+	glfwGetWindowPos(window, &wx, &wy);
+	glfwGetWindowSize(window, &ww, &wh);
+	int nMonitors = 0;
+	GLFWmonitor** monitors = glfwGetMonitors(&nMonitors);
+
+	int bestOverlap = 0;
+	for (int i = 0; i < nMonitors; ++i)
 	{
-		return glfwGetWindowMonitor(window);
-	}
-	int count;
-	GLFWmonitor** monitors = glfwGetMonitors(&count);
+		const GLFWvidmode* mode = glfwGetVideoMode(monitors[i]);
 
-	if (!count) return glfwGetPrimaryMonitor();
+		int mx, my;
+		int mw, mh;
+		glfwGetMonitorPos(monitors[i], &mx, &my);
+		mw = mode->width;
+		mh = mode->height;
 
-	Rect windowArea{0,0,0,0};
-	glfwGetWindowPos(window, &windowArea.x, &windowArea.y);
-	glfwGetWindowSize(window, &windowArea.w, &windowArea.h);
+		int overlap =
+			std::max(0, std::min(wx + ww, mx + mw) - std::max(wx, mx)) *
+			std::max(0, std::min(wy + wh, my + mh) - std::max(wy, my));
 
-	for (int i = 0; i < count; i++)
-	{
-		GLFWmonitor* monitor = monitors[i];
-		Rect monitorArea{ 0,0,0,0 };
-		glfwGetMonitorWorkarea(monitor, &monitorArea.x, &monitorArea.y, &monitorArea.w, &monitorArea.h);
-		if (windowArea.x < monitorArea.x + monitorArea.w &&
-			windowArea.x + windowArea.w > monitorArea.x &&
-			windowArea.y < monitorArea.y + monitorArea.h &&
-			windowArea.y + windowArea.h > monitorArea.y)
+		if (bestOverlap < overlap)
 		{
-			return monitor;
+			bestOverlap = overlap;
+			bestMonitor = monitors[i];
 		}
 	}
-	return glfwGetPrimaryMonitor();
+
+	return bestMonitor;
 }
 
 //		void setFullscreenMode(GLFWwindow* window, bool fullscreenMode) 
-$hook(void, StateSettings, setFullscreenMode, GLFWwindow* window, bool fullscreenMode)
+$hook(void, StateSettings, setFullscreenMode, GLFWwindow* window, bool fullscreen)
 {
-	if (fullscreenMode)
+	auto curMonitor = glfwGetWindowMonitor(window);
+	if (!curMonitor && fullscreen)
 	{
-		glfwGetWindowPos(window, &oldWindowRect.x, &oldWindowRect.y);
 		glfwGetWindowSize(window, &oldWindowRect.w, &oldWindowRect.h);
-		GLFWmonitor* monitor = getCurrentMonitor(window, fullscreenMode);
-		const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-		glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+		glfwGetWindowPos(window, &oldWindowRect.x, &oldWindowRect.y);
+
+		curMonitor = getCurrentMonitor(window);
+		auto mode = glfwGetVideoMode(curMonitor);
+		glfwSetWindowMonitor(window, curMonitor, 0, 0, mode->width, mode->height, mode->refreshRate);
 	}
-	else
+	else if (curMonitor && !fullscreen)
 	{
-		glfwSetWindowMonitor(window, NULL, oldWindowRect.x, oldWindowRect.y, oldWindowRect.w, oldWindowRect.h, GLFW_DONT_CARE);
+		curMonitor = nullptr;
+		glfwSetWindowMonitor(window, curMonitor, oldWindowRect.x, oldWindowRect.y, oldWindowRect.w, oldWindowRect.h, 0);
 	}
-	self->fullscreen = fullscreenMode;
-	self->fullscreenButton.setText(fullscreenMode ? "Exit Fullscreen" : "Enter Fullscreen");
+	self->fullscreen = fullscreen;
+	self->fullscreenButton.setText(fullscreen ? "Exit Fullscreen" : "Enter Fullscreen");
 }
 
 $hook(void, StateIntro, init, StateManager& s)
@@ -72,4 +82,28 @@ $hook(void, StateIntro, init, StateManager& s)
 	// initialize opengl stuff
 	glewExperimental = true;
 	glewInit();
+}
+
+static void toggleFullscreen(GLFWwindow* window, int action, int mods)
+{
+	if (action != GLFW_PRESS) return;
+
+	StateSettings::instanceObj.setFullscreenMode(window, !StateSettings::instanceObj.fullscreen);
+}
+
+$hookStatic(void, main_cpp, keyCallback, GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+	if (!KeyBinds::isLoaded())
+	{
+		if (key == GLFW_KEY_F11)
+		{
+			toggleFullscreen(window, action, mods);
+		}
+	}
+	original(window, key, scancode, action, mods);
+}
+
+$exec
+{
+	KeyBinds::addBind("Better Fullscreen", "Toggle Fullscreen", glfw::Keys::F11, KeyBindsScope::GLOBAL, toggleFullscreen);
 }
